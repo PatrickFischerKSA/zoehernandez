@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Capricorn – Denk rückwärts! (Deutsch)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.5; }
+    h1, h2, h3 { color: #222; }
+    #layout { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 20px; }
+    .panel { border: 1px solid #ccc; padding: 12px 16px; border-radius: 6px; background: #fafafa; }
+    .panel h2 { margin-top: 0; }
+    .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.8em; }
+    .neg { background:#ffe0e0; }
+    .req { background:#e0ffe5; }
+    .ord { background:#e0f0ff; }
+    .qual { background:#f4e0ff; }
+    ul { padding-left: 18px; }
+    .clue-title { font-weight:bold; }
+    .cause-tags { font-size:0.8em; color:#555; }
+    .chain-item { margin: 2px 0; }
+    .msg-good { color: #006600; }
+    .msg-bad { color: #bb0000; }
+    .msg-warn { color: #aa7700; }
+    .controls { margin-top: 8px; display:flex; flex-wrap:wrap; gap:6px; }
+    button { padding: 6px 10px; border-radius: 4px; border:1px solid #888; background:#eee; cursor:pointer; }
+    button:hover { background:#e0e0e0; }
+    select { padding: 4px; }
+    #footer { margin-top:20px; font-size:0.85em; color:#555; }
+    #score { font-weight:bold; }
+    .hint { font-style: italic; }
+    .solution-entry { margin: 2px 0; }
+    @media (max-width: 900px) {
+      #layout { grid-template-columns: 1fr; }
+    }
+    .rel-help { font-size:0.85em; color:#444; margin-top:4px; }
+  </style>
+</head>
+<body>
+<h1>Capricorn – Denk rückwärts!</h1>
+<p>
+Du bekommst einen <strong>Endzustand</strong> (z.&nbsp;B. ein Unfall im Labor) und baust eine 
+<strong>Ursachenkette rückwärts</strong>: von der Situation zurück zu den wichtigen Ursachen.
+</p>
+
+<label for="levelSelect"><strong>Fall wählen:</strong></label>
+<select id="levelSelect"></select>
+<span id="scoreArea"> | Punkte: <span id="score">0</span></span>
+
+<div id="layout">
+  <div class="panel" id="leftPanel">
+    <h2>Szenario</h2>
+    <div id="endState"></div>
+    <p id="meta"></p>
+    <h3>Hinweise (Clues)</h3>
+    <p>Die Hinweise sind deine Belege. Sie erzählen nichts direkt, aber sie grenzen gute Erklärungen ein.</p>
+    <div id="clues"></div>
+    <h3>Regeln (Constraints)</h3>
+    <p>Diese Regeln müssen von deiner Kette erfüllt werden.</p>
+    <div id="constraints"></div>
+  </div>
+
+  <div class="panel" id="rightPanel">
+    <h2>Ursachenkette bauen</h2>
+    <p>
+      Wähle einen passenden Grund (Cause) und bestimme die Beziehung zum Endzustand:<br>
+      <strong>„löst direkt aus“</strong> (triggers) → unmittelbarer Auslöser,<br>
+      <strong>„ermöglicht“</strong> (enables) → macht etwas überhaupt erst möglich,<br>
+      <strong>„deutet darauf hin“</strong> (implies) → spricht stark für eine Folgerung.
+    </p>
+    <div>
+      <label for="causeSelect"><strong>Schritt auswählen:</strong></label>
+      <select id="causeSelect"></select>
+      <label for="relSelect"><strong>Beziehung:</strong></label>
+      <select id="relSelect">
+        <option value="triggers">löst direkt aus (triggers)</option>
+        <option value="enables">ermöglicht (enables)</option>
+        <option value="implies">deutet darauf hin (implies)</option>
+      </select>
+      <button id="addBtn">Schritt hinzufügen</button>
+    </div>
+    <h3>Aktuelle Kette (vom END-Zustand zurück)</h3>
+    <div id="chainView"></div>
+    <div class="controls">
+      <button id="removeBtn">Letzten Schritt entfernen</button>
+      <button id="clearBtn">Kette ganz löschen</button>
+      <button id="submitBtn">Hypothese prüfen</button>
+      <button id="hintBtn">Tipp anzeigen</button>
+      <button id="solutionBtn">Lösungsskizze zeigen</button>
+    </div>
+    <h3>Rückmeldung</h3>
+    <div id="messages"></div>
+    <div id="hintBox" class="hint"></div>
+    <div id="solutionBox"></div>
+  </div>
+</div>
+
+<div id="footer">
+  <p>
+    <strong>Didaktischer Hinweis:</strong> Ziel ist nicht die „eine richtige“ Geschichte, sondern eine 
+    <strong>plausible, sparsame und regelkonforme</strong> Ursachenkette. 
+    Je kürzer und klarer deine Kette und je mehr Regeln erfüllt sind, desto mehr Punkte.
+  </p>
+</div>
+
+<script>
+const REL_TYPES = ["implies", "enables", "triggers"];
+
+// -------------------- FÄLLE / LEVELS (auf Deutsch) --------------------
+const levels = [
+  {
+    id: "L1",
+    title: "Laborunfall",
+    end_state: "Ein Biologe liegt tot auf dem Laborboden, umgeben von zerbrochenem Glas und einer verschütteten, durchsichtigen Lösung. Eine Kollegin / ein Kollege kniet neben ihm und hält seine Hand.",
+    meta: "Ort: Forschungslabor • Zeit: später Abend • Wetter: klar • Zugang: nur mit Schlüsselkarte",
+    clues: [
+      {id:"c_micropetridish", title:"Mikroskop-Aufnahme", text:"In einer Petrischale wächst ein Mikroorganismus rasch in einem neuen Nährmedium. Daneben klebt ein Zettel: „Nicht schütteln!“."},
+      {id:"c_keycardlog", title:"Zutrittsprotokoll", text:"Einträge: Biologe (19:12), Kollegin/Kollege (21:07), Labortechniker/in (18:59). Keine weiteren Einträge."},
+      {id:"c_safety", title:"Sicherheitsprotokoll", text:"Markierte Stelle: „Reaktives Medium niemals in der Nähe einer Flamme umgiessen; Neutralisationsbad bereithalten.“"},
+      {id:"c_bunsen", title:"Bunsenbrenner", text:"Der Hahn ist zugedreht, die Metallteile sind aber noch warm."},
+      {id:"c_gloves", title:"Handschuhe & Augendusche", text:"Ein Handschuh fehlt; die Augendusche wurde nicht benutzt; das Neutralisationsbad ist geschlossen."},
+      {id:"c_note", title:"Notiz auf der Werkbank", text:"„Medium-7 wird instabil, wenn es geschüttelt wird; nur unter dem Abzug testen.“ – Initialen: des Biologen."},
+      {id:"c_machine", title:"Schreibmaschine", text:"Auf dem angefangenen Blatt steht: „Modell bestätigt; Kaskadenrisiko bei Störung des Mediums.“"},
+      {id:"c_corridor", title:"Gespräch im Korridor", text:"Zwei Hauswarte reden über Geldsorgen; keiner von beiden hat Laborzugang."},
+      {id:"c_techbag", title:"Tasche der Labortechnik", text:"Enthält Dienstplan, ein Paläo-Buch und ein versiegeltes Kuvert mit Bargeld."},
+      {id:"c_spill", title:"Form der Verschüttung", text:"Das Muster der Flüssigkeit geht fächerförmig vom Rand der Werkbank aus – als wäre ein Gefäss heruntergerutscht."}
+    ],
+    causes: [
+      {id:"cause_agitation", text:"Das reaktive Medium wurde am Rand der Werkbank heftig geschüttelt", tags:["lab","protocol"]},
+      {id:"cause_no_neutral", text:"Es war kein Neutralisationsbad vorbereitet", tags:["protocol"]},
+      {id:"cause_burner_heat", text:"Die Restwärme des Bunsenbrenners machte das Medium instabil", tags:["lab"]},
+      {id:"cause_glove_missing", text:"Der Biologe arbeitete ohne vollständige Schutzausrüstung (Handschuhe)", tags:["protocol"]},
+      {id:"cause_key_access_only", text:"An diesem Abend waren nur berechtigte Personen im Labor", tags:["access"]},
+      {id:"cause_colleague_arrival", text:"Die Kollegin / der Kollege traf erst nach Beginn des Zwischenfalls ein", tags:["time","colleague"]},
+      {id:"cause_container_slide", text:"Das Gefäss rutschte durch Vibrationen vom Rand der Werkbank", tags:["physics"]},
+      {id:"cause_victim_rushed", text:"Der Biologe drängte sich zu einem schnellen Abschluss des Experiments", tags:["human"]},
+      {id:"cause_no_eyewash", text:"Die Dekontamination verzögerte sich, weil Augendusche und Neutralisation nicht genutzt wurden", tags:["protocol"]},
+      {id:"cause_outsider", text:"Ein unbefugter Eindringling manipulierte heimlich das Experiment", tags:["outsider","human"]}
+    ],
+    constraints: [
+      {id:"cons_access", kind:"negative", text:"Externe Eindringlinge dürfen keine Ursache deiner Kette sein (Zutrittsprotokoll schliesst sie aus)."},
+      {id:"cons_time", kind:"ordering", text:"Die Kollegin / der Kollege kann nicht die ursprüngliche Ursache sein (sie/er kam später)."},
+      {id:"cons_protocol", kind:"required", text:"Mindestens eine Verletzung des Sicherheitsprotokolls muss Teil der Kette sein."},
+      {id:"cons_parsimony", kind:"quality", text:"Vermeide doppelte Schritte – gleiche Ursache nur einmal verwenden."}
+    ],
+    hint: "Konzentriere dich auf: Restwärme, Schütteln am Rand, fehlendes Neutralisationsbad / Schutzausrüstung. Outsider sind ausgeschlossen.",
+    solution: [
+      {rel:"enables", from:"Es war kein Neutralisationsbad vorbereitet", to:"Die Dekontamination verzögerte sich, die Schäden wurden schlimmer"},
+      {rel:"enables", from:"Die Restwärme des Bunsenbrenners machte das Medium instabil", to:"Das reaktive Medium wurde am Rand der Werkbank heftig geschüttelt"},
+      {rel:"triggers", from:"Das reaktive Medium wurde am Rand der Werkbank heftig geschüttelt", to:"Das Gefäss rutschte vom Rand und zerschellte – die Flüssigkeit lief über den Boden"},
+      {rel:"enables", from:"Der Biologe arbeitete ohne vollständige Schutzausrüstung (Handschuhe)", to:"Die Exposition war für den Biologen tödlich"},
+      {rel:"implies", from:"An diesem Abend waren nur berechtigte Personen im Labor", to:"Ein unbefugter Eindringling ist als Ursache sehr unwahrscheinlich"}
+    ]
+  },
+  {
+    id: "L2",
+    title: "Statue auf dem Platz",
+    end_state: "Der Kopf einer öffentlichen Statue liegt zerbrochen auf den Stufen; auf einem Sockel daneben sind Russspuren. Einsatzkräfte sperren den Platz ab.",
+    meta: "Ort: Stadtplatz vor dem Gericht • Zeit: früher Morgen • Passanten: wenige • Überwachung: Kameras mit Lücken",
+    clues: [
+      {id:"c_blast", title:"Spuren der Explosion", text:"Der Schaden passt zu einer kleinen Sprengladung; das Muster deutet auf eine Platzierung unter einem Überhang hin."},
+      {id:"c_santana", title:"Blauer Wagen", text:"Ein blauer Personenwagen ist legal parkiert, hat aber keine direkten Explosionsschäden; der Motor ist kalt."},
+      {id:"c_calls", title:"Notrufe", text:"Erster Notruf 06:58 (Strassenverkäufer), zweiter 07:03 (Patrouillenpolizist)."},
+      {id:"c_cctv", title:"Kamera-Lücken", text:"Zwei Überwachungskameras waren wegen Wartung abgeschaltet; der Bereich um den Sockel liegt in einem toten Winkel."},
+      {id:"c_flyer", title:"Flyer", text:"Ein Flyer kündigt um 09:00 Uhr einen Uni-Vortrag zu „Wahrheit und Institutionen“ in der Nähe an."}
+    ],
+    causes: [
+      {id:"cause_charge_small", text:"Eine kleine Sprengladung wurde unter dem Überhang der Statue angebracht", tags:["physics"]},
+      {id:"cause_timing_blind", text:"Die Platzierung wurde genau in eine Überwachungs-Lücke der Kameras gelegt", tags:["access","blindspot"]},
+      {id:"cause_symbolic_link", text:"Der Anschlag steht symbolisch mit der bevorstehenden Veranstaltung in Verbindung", tags:["motive"]},
+      {id:"cause_vendor_first", text:"Der Strassenverkäufer bemerkte die Explosion als Erster, war aber nur Zeuge", tags:["time","vendor"]},
+      {id:"cause_worker_maintenance", text:"Wartungsarbeiten schalteten Kameras ab und erzeugten unbeabsichtigt einen toten Winkel", tags:["access","maintenance","blindspot"]},
+      {id:"cause_decoy_noise", text:"Eine Ablenkungsaktion sorgte für zusätzliche Unruhe und verzögerte die Reaktion", tags:["tactics"]}
+    ],
+    constraints: [
+      {id:"cons_bystander", kind:"negative", text:"Unbeteiligte Zeugen (z. B. der Strassenverkäufer) dürfen nicht als Hauptursache gesetzt werden."},
+      {id:"cons_access2", kind:"required", text:"Mindestens ein Schritt muss die Kamera-Lücke / Wartung als Zugangsbedingung enthalten."}
+    ],
+    hint: "Verknüpfe die Wartungsarbeiten mit dem toten Winkel und der Platzierung der Ladung. Der Verkäufer meldet nur – er legt nichts.",
+    solution: [
+      {rel:"enables", from:"Wartungsarbeiten schalteten Kameras ab und erzeugten unbeabsichtigt einen toten Winkel", to:"Die Platzierung wurde genau in eine Überwachungs-Lücke der Kameras gelegt"},
+      {rel:"enables", from:"Die Platzierung wurde genau in eine Überwachungs-Lücke der Kameras gelegt", to:"Eine kleine Sprengladung wurde unter dem Überhang der Statue angebracht"},
+      {rel:"triggers", from:"Eine kleine Sprengladung wurde unter dem Überhang der Statue angebracht", to:"Der Kopf der Statue wird abgesprengt und zerschellt auf den Stufen"},
+      {rel:"implies", from:"Der Anschlag steht symbolisch mit der bevorstehenden Veranstaltung in Verbindung", to:"Die Tat war geplant und zielgerichtet"},
+      {rel:"implies", from:"Der Strassenverkäufer bemerkte die Explosion als Erster, war aber nur Zeuge", to:"Der Zeuge ist zeitlich nah dran, aber nicht der Täter"}
+    ]
+  }
+];
+
+// -------------------- CONSTRAINT-FUNKTIONEN (LOGIK) --------------------
+
+// Externe Eindringlinge aus Level 1 ausschliessen
+function cons_access(chain) {
+  const outsiderMention = chain.some(s => (s.tags || []).includes("outsider"));
+  return outsiderMention ? "In deiner Kette kommt ein unbefugter Eindringling als Ursache vor – dies widerspricht dem Zutrittsprotokoll." : true;
+}
+
+// Kolleg/in darf nicht als Wurzelursache ganz am Ende stehen
+function cons_time(chain) {
+  if (chain.length > 0) {
+    const root = chain[chain.length-1];
+    if ((root.tags || []).includes("colleague")) {
+      return "Die Kollegin / der Kollege kommt laut Protokoll später – sie/er kann nicht die erste Ursache sein.";
+    }
+  }
+  return true;
+}
+
+// Mindestens ein Protokollverstoss (Tag "protocol") muss vorkommen
+function cons_protocol(chain) {
+  const hasBreach = chain.some(s => (s.tags || []).includes("protocol"));
+  return hasBreach ? true : "Es gibt keinen Sicherheitsverstoss in deiner Kette. Mindestens ein Schritt sollte eine Verletzung des Protokolls enthalten.";
+}
+
+// Doppelte Schritte vermeiden
+function cons_parsimony(chain) {
+  const seen = new Set();
+  let redundant = 0;
+  for (const s of chain) {
+    const k = s.text.trim().toLowerCase();
+    if (seen.has(k)) redundant += 1;
+    seen.add(k);
+  }
+  if (redundant > 0) {
+    return `Es gibt ${redundant} doppelte(n) Schritt(e) in deiner Kette. Gleiche Ursache bitte nur einmal verwenden.`;
+  }
+  return true;
+}
+
+// Zeugen (vendor-Tag) nicht als Wurzelursache
+function cons_bystander(chain) {
+  if (chain.length > 0) {
+    const root = chain[chain.length-1];
+    if ((root.tags || []).includes("vendor")) {
+      return "Der Strassenverkäufer meldet nur den Vorfall – er ist kein Täter und darf nicht als erste Ursache stehen.";
+    }
+  }
+  return true;
+}
+
+// Mindestens ein Schritt mit Kamera-Lücke / Wartung (Tags blindspot oder maintenance)
+function cons_access2(chain) {
+  const ok = chain.some(s => {
+    const t = s.tags || [];
+    return t.includes("blindspot") || t.includes("maintenance");
+  });
+  return ok ? true : "In deiner Kette fehlt die Kamera-Lücke / Wartung als Voraussetzung. Baue mindestens einen solchen Schritt ein.";
+}
+
+// Mapping der Regel-IDs zu den Funktionen
+const constraintFns = {
+  cons_access,
+  cons_time,
+  cons_protocol,
+  cons_parsimony,
+  cons_bystander,
+  cons_access2
+};
+
+// -------------------- SPIELZUSTAND --------------------
+let currentLevelIndex = 0;
+let chain = [];
+let score = 0;
+
+const levelSelect = document.getElementById("levelSelect");
+const scoreSpan = document.getElementById("score");
+const endStateDiv = document.getElementById("endState");
+const metaP = document.getElementById("meta");
+const cluesDiv = document.getElementById("clues");
+const constraintsDiv = document.getElementById("constraints");
+const causeSelect = document.getElementById("causeSelect");
+const relSelect = document.getElementById("relSelect");
+const chainView = document.getElementById("chainView");
+const messagesDiv = document.getElementById("messages");
+const hintBox = document.getElementById("hintBox");
+const solutionBox = document.getElementById("solutionBox");
+
+function initLevelSelect() {
+  levels.forEach((lvl, idx) => {
+    const opt = document.createElement("option");
+    opt.value = idx;
+    opt.textContent = `${idx+1}: ${lvl.title}`;
+    levelSelect.appendChild(opt);
+  });
+  levelSelect.addEventListener("change", () => {
+    currentLevelIndex = parseInt(levelSelect.value, 10);
+    chain = [];
+    renderAll();
+  });
+}
+
+function renderAll() {
+  const lvl = levels[currentLevelIndex];
+  endStateDiv.textContent = lvl.end_state;
+  metaP.textContent = lvl.meta;
+
+  // Hinweise
+  cluesDiv.innerHTML = "";
+  const ulC = document.createElement("ul");
+  lvl.clues.forEach(c => {
+    const li = document.createElement("li");
+    const spanT = document.createElement("span");
+    spanT.className = "clue-title";
+    spanT.textContent = c.title + ": ";
+    li.appendChild(spanT);
+    li.appendChild(document.createTextNode(c.text));
+    ulC.appendChild(li);
+  });
+  cluesDiv.appendChild(ulC);
+
+  // Regeln
+  constraintsDiv.innerHTML = "";
+  const ulCons = document.createElement("ul");
+  lvl.constraints.forEach(c => {
+    const li = document.createElement("li");
+    const badge = document.createElement("span");
+    badge.classList.add("badge");
+    if (c.kind === "negative") { badge.classList.add("neg"); badge.textContent = "verboten"; }
+    else if (c.kind === "required") { badge.classList.add("req"); badge.textContent = "erforderlich"; }
+    else if (c.kind === "ordering") { badge.classList.add("ord"); badge.textContent = "Reihenfolge"; }
+    else if (c.kind === "quality") { badge.classList.add("qual"); badge.textContent = "Qualität"; }
+    else { badge.textContent = c.kind; }
+    li.appendChild(badge);
+    li.appendChild(document.createTextNode(" " + c.text));
+    ulCons.appendChild(li);
+  });
+  constraintsDiv.appendChild(ulCons);
+
+  // Causes-Auswahl
+  causeSelect.innerHTML = "";
+  lvl.causes.forEach((c, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    const tagText = c.tags && c.tags.length ? " ("+c.tags.join(", ")+")" : "";
+    opt.textContent = `${i+1}: ${c.text}${tagText ? "" : ""}`; // Tags nicht anzeigen, wirken zu technisch
+    causeSelect.appendChild(opt);
+  });
+
+  renderChain();
+  messagesDiv.innerHTML = "";
+  hintBox.textContent = "";
+  solutionBox.innerHTML = "";
+  levelSelect.value = currentLevelIndex;
+  scoreSpan.textContent = score;
+}
+
+function renderChain() {
+  const lvl = levels[currentLevelIndex];
+  chainView.innerHTML = "";
+  const pEnd = document.createElement("p");
+  pEnd.textContent = "END-Zustand: " + lvl.end_state;
+  chainView.appendChild(pEnd);
+  if (chain.length === 0) {
+    const p = document.createElement("p");
+    p.textContent = "(noch keine Schritte – füge links oben eine Ursache hinzu)";
+    chainView.appendChild(p);
+  } else {
+    const ul = document.createElement("ul");
+    chain.forEach((s, idx) => {
+      const li = document.createElement("li");
+      li.className = "chain-item";
+      li.textContent = `[${idx+1}] ${s.rel_de} ← ${s.text}`;
+      ul.appendChild(li);
+    });
+    chainView.appendChild(ul);
+  }
+}
+
+function addStep() {
+  const lvl = levels[currentLevelIndex];
+  const idx = parseInt(causeSelect.value, 10);
+  if (isNaN(idx) || idx < 0 || idx >= lvl.causes.length) return;
+  const cause = lvl.causes[idx];
+  const rel = relSelect.value;
+  if (!REL_TYPES.includes(rel)) return;
+
+  let rel_de = "";
+  if (rel === "triggers") rel_de = "löst direkt aus";
+  else if (rel === "enables") rel_de = "ermöglicht";
+  else if (rel === "implies") rel_de = "deutet darauf hin";
+
+  chain.push({text: cause.text, rel: rel, rel_de: rel_de, tags: cause.tags || []});
+  renderChain();
+}
+
+function removeLast() {
+  if (chain.length > 0) {
+    chain.pop();
+    renderChain();
+  }
+}
+
+function clearChain() {
+  chain = [];
+  renderChain();
+}
+
+function validateChain() {
+  const messages = [];
+  let delta = 0;
+
+  // Sparsamkeit / doppelte Schritte
+  const seen = new Set();
+  for (const s of chain) {
+    const key = s.text.toLowerCase().trim();
+    if (seen.has(key)) {
+      messages.push({kind:"bad", msg:`Doppelter Schritt: „${s.text}“ kommt mehrmals vor.`});
+      delta -= 1;
+    } else {
+      delta += 2;
+    }
+    seen.add(key);
+  }
+
+  const lvl = levels[currentLevelIndex];
+  // Regeln prüfen
+  for (const cons of lvl.constraints) {
+    const fn = constraintFns[cons.id];
+    if (typeof fn === "function") {
+      const res = fn(chain);
+      if (res === true) {
+        messages.push({kind:"good", msg:`Regel erfüllt: ${cons.text}`});
+        delta += 4;
+      } else {
+        messages.push({kind:"bad", msg:`Regel verletzt: ${res}`});
+        delta -= 2;
+      }
+    }
+  }
+
+  // Struktur-Hinweise
+  const hasTrigger = chain.some(s => s.rel === "triggers");
+  const hasEnable = chain.some(s => s.rel === "enables");
+  if (!hasTrigger) messages.push({kind:"warn", msg:"Du hast keinen Schritt mit „löst direkt aus (triggers)“. Mindestens ein unmittelbarer Auslöser ist hilfreich."});
+  if (!hasEnable) messages.push({kind:"warn", msg:"Du hast keinen Schritt mit „ermöglicht (enables)“. Oft braucht es wenigstens eine Rahmenbedingung."});
+
+  return {messages, delta};
+}
+
+function submitChain() {
+  const {messages, delta} = validateChain();
+  messagesDiv.innerHTML = "";
+  messages.forEach(m => {
+    const p = document.createElement("p");
+    if (m.kind === "good") p.className = "msg-good";
+    else if (m.kind === "bad") p.className = "msg-bad";
+    else if (m.kind === "warn") p.className = "msg-warn";
+    p.textContent = m.msg;
+    messagesDiv.appendChild(p);
+  });
+  score += delta;
+  scoreSpan.textContent = score;
+
+  const hasBad = messages.some(m => m.kind === "bad");
+  const p = document.createElement("p");
+  if (!hasBad && chain.length >= 2) {
+    p.className = "msg-good";
+    p.textContent = "Sehr gut! Deine Ursachenkette erfüllt alle Regeln für diesen Fall. Du kannst jetzt einen anderen Fall wählen oder weiter optimieren.";
+  } else {
+    p.className = "msg-warn";
+    p.textContent = "Noch nicht ideal – schaue dir die roten Rückmeldungen an und passe deine Kette an.";
+  }
+  messagesDiv.appendChild(p);
+}
+
+function showHint() {
+  const lvl = levels[currentLevelIndex];
+  hintBox.textContent = "Tipp: " + lvl.hint;
+}
+
+function showSolution() {
+  const lvl = levels[currentLevelIndex];
+  solutionBox.innerHTML = "<strong>Eine mögliche Lösungsskizze:</strong>";
+  const ul = document.createElement("ul");
+  lvl.solution.forEach(e => {
+    const li = document.createElement("li");
+    li.className = "solution-entry";
+    li.textContent = `${e.from} — ${e.rel} —> ${e.to}`;
+    ul.appendChild(li);
+  });
+  solutionBox.appendChild(ul);
+}
+
+// Buttons verbinden
+document.getElementById("addBtn").addEventListener("click", addStep);
+document.getElementById("removeBtn").addEventListener("click", removeLast);
+document.getElementById("clearBtn").addEventListener("click", clearChain);
+document.getElementById("submitBtn").addEventListener("click", submitChain);
+document.getElementById("hintBtn").addEventListener("click", showHint);
+document.getElementById("solutionBtn").addEventListener("click", showSolution);
+
+// Start
+initLevelSelect();
+renderAll();
+</script>
+</body>
+</html>
